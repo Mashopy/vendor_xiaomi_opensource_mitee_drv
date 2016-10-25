@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0
 obj-$(CONFIG_OPTEE) += optee.o
-optee-y := src/call.o \
+optee-y := src/bench.o \
+	src/call.o \
 	src/core.o \
 	src/device.o \
 	src/rpc.o \
