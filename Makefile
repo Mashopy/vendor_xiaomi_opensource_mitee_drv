@@ -1,9 +1,14 @@
 # SPDX-License-Identifier: GPL-2.0
-obj-$(CONFIG_OPTEE) += optee.o
-optee-y := src/bench.o \
+
+$(info "CONFIG_MITEE_SUPPORT=$(CONFIG_MITEE_SUPPORT)")
+
+$(info "Welcome to MiTee...")
+obj-$(CONFIG_MITEE_SUPPORT) += mitee.o
+mitee-y := src/bench.o \
 	src/call.o \
 	src/core.o \
 	src/device.o \
+	src/mitee_memlog.o \
 	src/rpc.o \
 	src/shm_pool.o \
 	src/supp.o \

@@ -35,16 +35,17 @@ void optee_wait_queue_exit(struct optee_wait_queue *priv)
 static void handle_rpc_func_cmd_get_time(struct optee_msg_arg *arg)
 {
 	struct timespec64 ts;
+    struct optee_msg_param *param_ref_0 = &arg->params[0];
 
 	if (arg->num_params != 1)
 		goto bad;
-	if ((arg->params[0].attr & OPTEE_MSG_ATTR_TYPE_MASK) !=
+	if ((param_ref_0->attr & OPTEE_MSG_ATTR_TYPE_MASK) !=
 			OPTEE_MSG_ATTR_TYPE_VALUE_OUTPUT)
 		goto bad;
 
 	ktime_get_real_ts64(&ts);
-	arg->params[0].u.value.a = ts.tv_sec;
-	arg->params[0].u.value.b = ts.tv_nsec;
+	param_ref_0->u.value.a = ts.tv_sec;
+	param_ref_0->u.value.b = ts.tv_nsec;
 
 	arg->ret = TEEC_SUCCESS;
 	return;
@@ -97,19 +98,21 @@ static void wq_wakeup(struct optee_wait_queue *wq, u32 key)
 static void handle_rpc_func_cmd_wq(struct optee *optee,
 				   struct optee_msg_arg *arg)
 {
+    struct optee_msg_param *param_ref_0 = &arg->params[0];
+
 	if (arg->num_params != 1)
 		goto bad;
 
-	if ((arg->params[0].attr & OPTEE_MSG_ATTR_TYPE_MASK) !=
+	if ((param_ref_0->attr & OPTEE_MSG_ATTR_TYPE_MASK) !=
 			OPTEE_MSG_ATTR_TYPE_VALUE_INPUT)
 		goto bad;
 
-	switch (arg->params[0].u.value.a) {
+	switch (param_ref_0->u.value.a) {
 	case OPTEE_MSG_RPC_WAIT_QUEUE_SLEEP:
-		wq_sleep(&optee->wait_queue, arg->params[0].u.value.b);
+		wq_sleep(&optee->wait_queue, param_ref_0->u.value.b);
 		break;
 	case OPTEE_MSG_RPC_WAIT_QUEUE_WAKEUP:
-		wq_wakeup(&optee->wait_queue, arg->params[0].u.value.b);
+		wq_wakeup(&optee->wait_queue, param_ref_0->u.value.b);
 		break;
 	default:
 		goto bad;
@@ -123,16 +126,18 @@ bad:
 
 static void handle_rpc_func_cmd_wait(struct optee_msg_arg *arg)
 {
+    struct optee_msg_param *param_ref_0 = &arg->params[0];
+
 	u32 msec_to_wait;
 
 	if (arg->num_params != 1)
 		goto bad;
 
-	if ((arg->params[0].attr & OPTEE_MSG_ATTR_TYPE_MASK) !=
+	if ((param_ref_0->attr & OPTEE_MSG_ATTR_TYPE_MASK) !=
 			OPTEE_MSG_ATTR_TYPE_VALUE_INPUT)
 		goto bad;
 
-	msec_to_wait = arg->params[0].u.value.a;
+	msec_to_wait = param_ref_0->u.value.a;
 
 	/* Go to interruptible sleep */
 	msleep_interruptible(msec_to_wait);
@@ -201,29 +206,35 @@ static void handle_rpc_func_cmd_shm_alloc(struct tee_context *ctx,
 	struct tee_shm *shm;
 	size_t sz;
 	size_t n;
+	struct optee_msg_param *param_ref_0 = &arg->params[0];
+	struct optee_msg_param *param_ref = NULL;
 
 	arg->ret_origin = TEEC_ORIGIN_COMMS;
 
 	if (!arg->num_params ||
-	    arg->params[0].attr != OPTEE_MSG_ATTR_TYPE_VALUE_INPUT) {
+	    param_ref_0->attr != OPTEE_MSG_ATTR_TYPE_VALUE_INPUT) {
 		arg->ret = TEEC_ERROR_BAD_PARAMETERS;
 		return;
 	}
 
 	for (n = 1; n < arg->num_params; n++) {
-		if (arg->params[n].attr != OPTEE_MSG_ATTR_TYPE_NONE) {
+		param_ref = arg->params + n;
+		if (param_ref->attr != OPTEE_MSG_ATTR_TYPE_NONE) {
 			arg->ret = TEEC_ERROR_BAD_PARAMETERS;
 			return;
 		}
 	}
 
-	sz = arg->params[0].u.value.b;
-	switch (arg->params[0].u.value.a) {
+	sz = param_ref_0->u.value.b;
+	switch (param_ref_0->u.value.a) {
 	case OPTEE_MSG_RPC_SHM_TYPE_APPL:
 		shm = cmd_alloc_suppl(ctx, sz);
 		break;
 	case OPTEE_MSG_RPC_SHM_TYPE_KERNEL:
 		shm = tee_shm_alloc(ctx, sz, TEE_SHM_MAPPED);
+		break;
+	case OPTEE_MSG_RPC_SHM_TYPE_GLOBAL:
+		shm = tee_shm_alloc(ctx, sz, TEE_SHM_MAPPED | TEE_SHM_DMA_BUF);
 		break;
 	default:
 		arg->ret = TEEC_ERROR_BAD_PARAMETERS;
@@ -262,25 +273,25 @@ static void handle_rpc_func_cmd_shm_alloc(struct tee_context *ctx,
 		call_ctx->pages_list = pages_list;
 		call_ctx->num_entries = page_num;
 
-		arg->params[0].attr = OPTEE_MSG_ATTR_TYPE_TMEM_OUTPUT |
+		param_ref_0->attr = OPTEE_MSG_ATTR_TYPE_TMEM_OUTPUT |
 				      OPTEE_MSG_ATTR_NONCONTIG;
 		/*
 		 * In the least bits of u.tmem.buf_ptr we store buffer offset
 		 * from 4k page, as described in OP-TEE ABI.
 		 */
-		arg->params[0].u.tmem.buf_ptr = virt_to_phys(pages_list) |
+		param_ref_0->u.tmem.buf_ptr = virt_to_phys(pages_list) |
 			(tee_shm_get_page_offset(shm) &
 			 (OPTEE_MSG_NONCONTIG_PAGE_SIZE - 1));
-		arg->params[0].u.tmem.size = tee_shm_get_size(shm);
-		arg->params[0].u.tmem.shm_ref = (unsigned long)shm;
+		param_ref_0->u.tmem.size = tee_shm_get_size(shm);
+		param_ref_0->u.tmem.shm_ref = (unsigned long)shm;
 
 		optee_fill_pages_list(pages_list, pages, page_num,
 				      tee_shm_get_page_offset(shm));
 	} else {
-		arg->params[0].attr = OPTEE_MSG_ATTR_TYPE_TMEM_OUTPUT;
-		arg->params[0].u.tmem.buf_ptr = pa;
-		arg->params[0].u.tmem.size = sz;
-		arg->params[0].u.tmem.shm_ref = (unsigned long)shm;
+		param_ref_0->attr = OPTEE_MSG_ATTR_TYPE_TMEM_OUTPUT;
+		param_ref_0->u.tmem.buf_ptr = pa;
+		param_ref_0->u.tmem.size = sz;
+		param_ref_0->u.tmem.shm_ref = (unsigned long)shm;
 	}
 
 	arg->ret = TEEC_SUCCESS;
@@ -318,21 +329,23 @@ static void handle_rpc_func_cmd_shm_free(struct tee_context *ctx,
 					 struct optee_msg_arg *arg)
 {
 	struct tee_shm *shm;
+	struct optee_msg_param *param_ref_0 = &arg->params[0];
 
 	arg->ret_origin = TEEC_ORIGIN_COMMS;
 
 	if (arg->num_params != 1 ||
-	    arg->params[0].attr != OPTEE_MSG_ATTR_TYPE_VALUE_INPUT) {
+	    param_ref_0->attr != OPTEE_MSG_ATTR_TYPE_VALUE_INPUT) {
 		arg->ret = TEEC_ERROR_BAD_PARAMETERS;
 		return;
 	}
 
-	shm = (struct tee_shm *)(unsigned long)arg->params[0].u.value.b;
-	switch (arg->params[0].u.value.a) {
+	shm = (struct tee_shm *)(unsigned long)param_ref_0->u.value.b;
+	switch (param_ref_0->u.value.a) {
 	case OPTEE_MSG_RPC_SHM_TYPE_APPL:
 		cmd_free_suppl(ctx, shm);
 		break;
 	case OPTEE_MSG_RPC_SHM_TYPE_KERNEL:
+    case OPTEE_MSG_RPC_SHM_TYPE_GLOBAL:
 		tee_shm_free(shm);
 		break;
 	default:
@@ -361,19 +374,20 @@ static void handle_rpc_func_cmd_bm_reg(struct optee_msg_arg *arg)
 	u64 size;
 	u64 type;
 	u64 paddr;
+	struct optee_msg_param *param_ref_0 = &arg->params[0];
 
 	if (arg->num_params != 1)
 		goto bad;
 
-	if ((arg->params[0].attr & OPTEE_MSG_ATTR_TYPE_MASK) !=
+	if ((param_ref_0->attr & OPTEE_MSG_ATTR_TYPE_MASK) !=
 			OPTEE_MSG_ATTR_TYPE_VALUE_INPUT)
 		goto bad;
 
-	type = arg->params[0].u.value.a;
+	type = param_ref_0->u.value.a;
 	switch (type) {
 	case OPTEE_MSG_RPC_CMD_BENCH_REG_NEW:
-		size = arg->params[0].u.value.c;
-		paddr = arg->params[0].u.value.b;
+		size = param_ref_0->u.value.c;
+		paddr = param_ref_0->u.value.b;
 		down_write(&optee_bench_ts_rwsem);
 		optee_bench_ts_global =
 			memremap(paddr, size, MEMREMAP_WB);

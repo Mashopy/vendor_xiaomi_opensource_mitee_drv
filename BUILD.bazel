@@ -15,7 +15,7 @@ filegroup(
 )
 
 ddk_headers(
-    name = "optee_local_hdrs",
+    name = "mitee_local_hdrs",
     # include header files
     hdrs = glob([
         "include/tee/*.h",
@@ -32,7 +32,7 @@ ddk_headers(
 )
 
 define_mgk_ddk_ko(
-    name = "optee",
+    name = "mitee",
     srcs = glob([
 		"**/src/*.c",
 		"**/src/tee/*.c",
@@ -40,7 +40,7 @@ define_mgk_ddk_ko(
 		"**/include/tee/*.h",
 	]),
     header_deps = [
-        ":optee_local_hdrs",
+        ":mitee_local_hdrs",
     ],
-    out = "optee.ko",
+    out = "mitee.ko",
 )

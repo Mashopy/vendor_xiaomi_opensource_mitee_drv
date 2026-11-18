@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2015, Linaro Limited
+ * Copyright (C) 2021 XiaoMi, Inc.
  */
 #include <linux/device.h>
 #include <linux/slab.h>
@@ -195,16 +196,16 @@ static int supp_check_recv_params(size_t num_params, struct tee_param *params,
 	 * increased earlier and we'll even refuse to accept any below.
 	 */
 	for (n = 0; n < num_params; n++)
-		if (tee_param_is_memref(params + n) && params[n].u.memref.shm)
-			tee_shm_put(params[n].u.memref.shm);
+		if (tee_param_is_memref(params + n) && (params + n)->u.memref.shm)
+			tee_shm_put((params + n)->u.memref.shm);
 
 	/*
 	 * We only expect parameters as TEE_IOCTL_PARAM_ATTR_TYPE_NONE with
 	 * or without the TEE_IOCTL_PARAM_ATTR_META bit set.
 	 */
 	for (n = 0; n < num_params; n++)
-		if (params[n].attr &&
-		    params[n].attr != TEE_IOCTL_PARAM_ATTR_META)
+		if ((params + n)->attr &&
+		    (params + n)->attr != TEE_IOCTL_PARAM_ATTR_META)
 			return -EINVAL;
 
 	/* At most we'll need one meta parameter so no need to check for more */

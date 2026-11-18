@@ -11,6 +11,7 @@
 #include <linux/semaphore.h>
 #include <tee_drv.h>
 #include <linux/types.h>
+#include <linux/notifier.h>
 #include "optee_msg.h"
 
 #define OPTEE_MAX_ARG_SIZE	1024
@@ -89,6 +90,8 @@ struct optee {
 	struct optee_supp supp;
 	struct tee_shm_pool *pool;
 	void *memremaped_shm;
+	struct atomic_notifier_head notifier;
+	struct platform_device *mitee_memlog_pdev;
 	u32 sec_caps;
 };
 
@@ -164,6 +167,14 @@ int optee_shm_register_supp(struct tee_context *ctx, struct tee_shm *shm,
 			    unsigned long start);
 int optee_shm_unregister_supp(struct tee_context *ctx, struct tee_shm *shm);
 
+enum {
+	MITEE_CALL_PREPARE,
+	MITEE_CALL_RETURNED,
+};
+struct optee *get_optee_drv_state(void);
+int mitee_call_notifier_register(struct notifier_block *n);
+int mitee_call_notifier_unregister(struct notifier_block *n);
+
 int optee_from_msg_param(struct tee_param *params, size_t num_params,
 			 const struct optee_msg_param *msg_params);
 int optee_to_msg_param(struct optee_msg_param *msg_params, size_t num_params,
@@ -175,6 +186,9 @@ void optee_fill_pages_list(u64 *dst, struct page **pages, int num_pages,
 			   size_t page_offset);
 
 int optee_enumerate_devices(void);
+
+void init_bind_core_switch(void);
+void deinit_bind_core_switch(void);
 
 /*
  * Small helpers

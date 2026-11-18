@@ -335,6 +335,9 @@ tee_ioctl_shm_register(struct tee_context *ctx,
 	if (data.flags)
 		return -EINVAL;
 
+	if (!access_ok((void __user *)(unsigned long)data.addr, data.length))
+		return -EFAULT;
+
 	shm = tee_shm_register(ctx, data.addr, data.length,
 			       TEE_SHM_DMA_BUF | TEE_SHM_USER_MAPPED);
 	if (IS_ERR(shm))
@@ -374,16 +377,16 @@ static int params_from_user(struct tee_context *ctx, struct tee_param *params,
 		if (ip.attr & ~TEE_IOCTL_PARAM_ATTR_MASK)
 			return -EINVAL;
 
-		params[n].attr = ip.attr;
+		(params+n)->attr = ip.attr;
 		switch (ip.attr & TEE_IOCTL_PARAM_ATTR_TYPE_MASK) {
 		case TEE_IOCTL_PARAM_ATTR_TYPE_NONE:
 		case TEE_IOCTL_PARAM_ATTR_TYPE_VALUE_OUTPUT:
 			break;
 		case TEE_IOCTL_PARAM_ATTR_TYPE_VALUE_INPUT:
 		case TEE_IOCTL_PARAM_ATTR_TYPE_VALUE_INOUT:
-			params[n].u.value.a = ip.a;
-			params[n].u.value.b = ip.b;
-			params[n].u.value.c = ip.c;
+			(params+n)->u.value.a = ip.a;
+			(params+n)->u.value.b = ip.b;
+			(params+n)->u.value.c = ip.c;
 			break;
 		case TEE_IOCTL_PARAM_ATTR_TYPE_MEMREF_INPUT:
 		case TEE_IOCTL_PARAM_ATTR_TYPE_MEMREF_OUTPUT:
@@ -424,9 +427,9 @@ static int params_from_user(struct tee_context *ctx, struct tee_param *params,
 				return -EINVAL;
 			}
 
-			params[n].u.memref.shm_offs = ip.a;
-			params[n].u.memref.size = ip.b;
-			params[n].u.memref.shm = shm;
+			(params+n)->u.memref.shm_offs = ip.a;
+			(params+n)->u.memref.size = ip.b;
+			(params+n)->u.memref.shm = shm;
 			break;
 		default:
 			/* Unknown attribute */
@@ -536,8 +539,8 @@ out:
 		/* Decrease ref count for all valid shared memory pointers */
 		for (n = 0; n < arg.num_params; n++)
 			if (tee_param_is_memref(params + n) &&
-			    params[n].u.memref.shm)
-				tee_shm_put(params[n].u.memref.shm);
+			    (params+n)->u.memref.shm)
+				tee_shm_put((params+n)->u.memref.shm);
 		kfree(params);
 	}
 
@@ -598,8 +601,8 @@ out:
 		/* Decrease ref count for all valid shared memory pointers */
 		for (n = 0; n < arg.num_params; n++)
 			if (tee_param_is_memref(params + n) &&
-			    params[n].u.memref.shm)
-				tee_shm_put(params[n].u.memref.shm);
+			    (params+n)->u.memref.shm)
+				tee_shm_put((params+n)->u.memref.shm);
 		kfree(params);
 	}
 	return rc;
@@ -1194,7 +1197,7 @@ int tee_client_cancel_req(struct tee_context *ctx,
 }
 
 static int tee_client_device_match(struct device *dev,
-				   struct device_driver *drv)
+				    const struct device_driver *drv)
 {
 	const struct tee_client_device_id *id_table;
 	struct tee_client_device *tee_device;
@@ -1211,7 +1214,7 @@ static int tee_client_device_match(struct device *dev,
 	return 0;
 }
 
-static int tee_client_device_uevent(struct device *dev,
+static int tee_client_device_uevent(const struct device *dev,
 				    struct kobj_uevent_env *env)
 {
 	uuid_t *dev_id = &to_tee_client_device(dev)->id.uuid;
@@ -1226,11 +1229,11 @@ struct bus_type tee_bus_type = {
 };
 EXPORT_SYMBOL_GPL(tee_bus_type);
 
-static int __init tee_init(void)
+int tee_init(void)
 {
 	int rc;
 
-	tee_class = class_create(THIS_MODULE, "tee");
+	tee_class = class_create("tee");
 	if (IS_ERR(tee_class)) {
 		pr_err("couldn't create class\n");
 		return PTR_ERR(tee_class);
@@ -1259,18 +1262,10 @@ out_unreg_class:
 	return rc;
 }
 
-static void __exit tee_exit(void)
+void tee_exit(void)
 {
 	bus_unregister(&tee_bus_type);
 	unregister_chrdev_region(tee_devt, TEE_NUM_DEVICES);
 	class_destroy(tee_class);
 	tee_class = NULL;
 }
-
-subsys_initcall(tee_init);
-module_exit(tee_exit);
-
-MODULE_AUTHOR("Linaro");
-MODULE_DESCRIPTION("TEE Driver");
-MODULE_VERSION("1.0");
-MODULE_LICENSE("GPL v2");
