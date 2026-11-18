@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2015, Linaro Limited
+ * Copyright (C) 2021 XiaoMi, Inc.
  */
 #include <linux/arm-smccc.h>
 #include <linux/device.h>
@@ -8,7 +9,7 @@
 #include <linux/errno.h>
 #include <linux/mm.h>
 #include <linux/slab.h>
-#include <linux/tee_drv.h>
+#include <tee_drv.h>
 #include <linux/types.h>
 #include <linux/uaccess.h>
 #include "optee_private.h"

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2015-2017, 2019-2021 Linaro Limited
+ * Copyright (C) 2021 XiaoMi, Inc.
  */
 #include <linux/anon_inodes.h>
 #include <linux/device.h>
@@ -8,7 +9,7 @@
 #include <linux/mm.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
-#include <linux/tee_drv.h>
+#include <tee_drv.h>
 #include <linux/uio.h>
 #include "tee_private.h"
 

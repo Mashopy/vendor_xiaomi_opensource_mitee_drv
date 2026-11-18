@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (C) 2019 Linaro Ltd.
+ * Copyright (C) 2021 XiaoMi, Inc.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <linux/kernel.h>
 #include <linux/slab.h>
-#include <linux/tee_drv.h>
+#include <tee_drv.h>
 #include <linux/uuid.h>
 #include "optee_private.h"
 

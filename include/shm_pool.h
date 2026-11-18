@@ -2,12 +2,13 @@
 /*
  * Copyright (c) 2015, Linaro Limited
  * Copyright (c) 2016, EPAM Systems
+ * Copyright (C) 2021 XiaoMi, Inc.
  */
 
 #ifndef SHM_POOL_H
 #define SHM_POOL_H
 
-#include <linux/tee_drv.h>
+#include <tee_drv.h>
 
 struct tee_shm_pool_mgr *optee_shm_pool_alloc_pages(void);
 
