@@ -1,0 +1,42 @@
+load("//build/bazel_mgk_rules:mgk_ddk_ko.bzl", "define_mgk_ddk_ko")
+load("//build/kernel/kleaf:kernel.bzl", "ddk_headers")
+
+package(
+    default_visibility = [
+        "//visibility:public",
+    ],
+)
+
+filegroup(
+    name = "ddk_kconfigs",
+    srcs = glob([
+        "**/Kconfig",
+    ]),
+)
+
+ddk_headers(
+    name = "optee_local_hdrs",
+    # include header files
+    hdrs = glob([
+        "include/*.h",
+    ]),
+    # include directory for relative path
+    includes = [
+        "include",
+    ],
+    visibility = [
+        "//visibility:private",
+    ],
+)
+
+define_mgk_ddk_ko(
+    name = "optee",
+    srcs = glob([
+		"**/src/*.c",
+		"**/include/*.h",
+	]),
+    header_deps = [
+        ":optee_local_hdrs",
+    ],
+    out = "optee.ko",
+)
