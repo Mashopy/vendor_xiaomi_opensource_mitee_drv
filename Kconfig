@@ -1,23 +1,22 @@
 # SPDX-License-Identifier: GPL-2.0-only
-# OP-TEE Trusted Execution Environment Configuration
-config OPTEE
-	tristate "OP-TEE"
-	depends on HAVE_ARM_SMCCC
+# MI-TEE Trusted Execution Environment Configuration
+config MITEE_SUPPORT
+	tristate "Enable MITEE Support"
 	help
-	  This implements the OP-TEE Trusted Execution Environment (TEE)
+	  This implements the MI-TEE Trusted Execution Environment (TEE)
 	  driver.
 
 config OPTEE_SHM_NUM_PRIV_PAGES
 	int "Private Shared Memory Pages"
 	default 1
-	depends on OPTEE
+	depends on MITEE_SUPPORT
 	help
 	  This sets the number of private shared memory pages to be
-	  used by OP-TEE TEE driver.
+	  used by MITEE TEE driver.
 
 config OPTEE_BENCHMARK
-	bool "OP-TEE Benchmark (EXPERIMENTAL)"
-	depends on OPTEE
+	bool "MITEE Benchmark (EXPERIMENTAL)"
+	depends on MITEE_SUPPORT
 	help
-	  This enables benchmarking feature in the OP-TEE Trusted
+	  This enables benchmarking feature in the MITEE Trusted
 	  Execution Environment (TEE) driver.

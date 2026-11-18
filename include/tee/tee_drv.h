@@ -596,4 +596,14 @@ struct tee_context *teedev_open(struct tee_device *teedev);
  */
 void teedev_close_context(struct tee_context *ctx);
 
+/**
+ * tee_init() - Initialize the TEE core driver
+ */
+int tee_init(void);
+
+/**
+ * tee_exit() - Exit the TEE core driver
+ */
+void tee_exit(void);
+
 #endif /*__TEE_DRV_H*/

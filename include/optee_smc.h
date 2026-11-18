@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: (GPL-2.0 OR BSD-2-Clause) */
 /*
  * Copyright (c) 2015-2019, Linaro Limited
+ * Copyright (C) 2021 XiaoMi, Inc.
  */
 #ifndef OPTEE_SMC_H
 #define OPTEE_SMC_H
@@ -175,6 +176,10 @@ struct optee_smc_call_get_os_revision_result {
 #define OPTEE_SMC_FUNCID_GET_SHM_CONFIG	7
 #define OPTEE_SMC_GET_SHM_CONFIG \
 	OPTEE_SMC_FAST_CALL_VAL(OPTEE_SMC_FUNCID_GET_SHM_CONFIG)
+
+#define OPTEE_SMC_FUNCID_GET_MITEE_LOG_BUFFER	107
+#define OPTEE_SMC_GET_MITEE_LOG_BUFFER \
+	OPTEE_SMC_FAST_CALL_VAL(OPTEE_SMC_FUNCID_GET_MITEE_LOG_BUFFER)
 
 struct optee_smc_get_shm_config_result {
 	unsigned long status;

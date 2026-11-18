@@ -18,14 +18,22 @@
 #include <tee_drv.h>
 #include <linux/types.h>
 #include <linux/uaccess.h>
+#include <linux/init.h>
 #include "optee_bench.h"
 #include "optee_private.h"
 #include "optee_smc.h"
 #include "shm_pool.h"
+#include "mitee_memlog.h"
+
+#define MITEE_FEATURE_FW_NP_ENABLE  0
+#define MITEE_FEATURE_HVC_ENABLE    0
+#define MITEE_FEATURE_CAP_ENABLE    0
 
 #define DRIVER_NAME "optee"
 
 #define OPTEE_SHM_NUM_PRIV_PAGES	CONFIG_OPTEE_SHM_NUM_PRIV_PAGES
+
+struct mutex tee_mutex;
 
 /**
  * optee_from_msg_param() - convert from OPTEE_MSG parameters to
@@ -215,7 +223,8 @@ static void optee_get_version(struct tee_device *teedev,
 	};
 	struct optee *optee = tee_get_drvdata(teedev);
 
-	if (optee->sec_caps & OPTEE_SMC_SEC_CAP_DYNAMIC_SHM)
+	// enable dynamic shared memory for CA only(dev/tee0)
+	if ((optee->sec_caps & OPTEE_SMC_SEC_CAP_DYNAMIC_SHM) && (teedev != optee->supp_teedev))
 		v.gen_caps |= TEE_GEN_CAP_REG_MEM;
 	*vers = v;
 }
@@ -337,6 +346,7 @@ static const struct tee_desc optee_supp_desc = {
 	.flags = TEE_DESC_PRIVILEGED,
 };
 
+#if MITEE_FEATURE_CAP_ENABLE
 static bool optee_msg_api_uid_is_optee_api(optee_invoke_fn *invoke_fn)
 {
 	struct arm_smccc_res res;
@@ -411,6 +421,7 @@ static bool optee_msg_exchange_capabilities(optee_invoke_fn *invoke_fn,
 	*sec_caps = res.result.capabilities;
 	return true;
 }
+#endif
 
 static struct tee_shm_pool *optee_config_dyn_shm(void)
 {
@@ -527,6 +538,7 @@ static void optee_smccc_smc(unsigned long a0, unsigned long a1,
 	arm_smccc_smc(a0, a1, a2, a3, a4, a5, a6, a7, res);
 }
 
+#if MITEE_FEATURE_HVC_ENABLE
 static void optee_smccc_hvc(unsigned long a0, unsigned long a1,
 			    unsigned long a2, unsigned long a3,
 			    unsigned long a4, unsigned long a5,
@@ -535,9 +547,11 @@ static void optee_smccc_hvc(unsigned long a0, unsigned long a1,
 {
 	arm_smccc_hvc(a0, a1, a2, a3, a4, a5, a6, a7, res);
 }
+#endif
 
-static optee_invoke_fn *get_invoke_func(struct device_node *np)
+static optee_invoke_fn *get_invoke_func(void)
 {
+#if MITEE_FEATURE_FW_NP_ENABLE
 	const char *method;
 
 	pr_info("probing for conduit method from DT.\n");
@@ -547,29 +561,41 @@ static optee_invoke_fn *get_invoke_func(struct device_node *np)
 		return ERR_PTR(-ENXIO);
 	}
 
+#if MITEE_FEATURE_HVC_ENABLE
 	if (!strcmp("hvc", method))
 		return optee_smccc_hvc;
 	else if (!strcmp("smc", method))
 		return optee_smccc_smc;
+#else
+	if (!strcmp("smc", method))
+		return optee_smccc_smc;
+#endif /* MITEE_FEATURE_HVC_ENABLE */
 
 	pr_warn("invalid \"method\" property: %s\n", method);
 	return ERR_PTR(-EINVAL);
+#else
+	return optee_smccc_smc;
+#endif /* MITEE_FEATURE_FW_NP_ENABLE */
 }
 
-static struct optee *optee_probe(struct device_node *np)
+static struct optee *optee_probe(void)
 {
 	optee_invoke_fn *invoke_fn;
 	struct tee_shm_pool *pool = ERR_PTR(-EINVAL);
 	struct optee *optee = NULL;
 	void *memremaped_shm = NULL;
 	struct tee_device *teedev;
-	u32 sec_caps;
+	u32 sec_caps = 0;
 	int rc;
 
-	invoke_fn = get_invoke_func(np);
+    sec_caps |= OPTEE_SMC_SEC_CAP_HAVE_RESERVED_SHM;
+	//enable registerd dynamic shm support for CA
+	sec_caps |= OPTEE_SMC_SEC_CAP_DYNAMIC_SHM;
+	invoke_fn = get_invoke_func();
 	if (IS_ERR(invoke_fn))
 		return (void *)invoke_fn;
 
+#if MITEE_FEATURE_CAP_ENABLE
 	if (!optee_msg_api_uid_is_optee_api(invoke_fn)) {
 		pr_warn("api uid mismatch\n");
 		return ERR_PTR(-EINVAL);
@@ -586,11 +612,14 @@ static struct optee *optee_probe(struct device_node *np)
 		pr_warn("capabilities mismatch\n");
 		return ERR_PTR(-EINVAL);
 	}
+#endif
 
 	/*
 	 * Try to use dynamic shared memory if possible
+	 * kernel and supplicant still need static shared memory
+	 * do not enable config_dyn_shm, still use optee_config_shm_memremap
 	 */
-	if (sec_caps & OPTEE_SMC_SEC_CAP_DYNAMIC_SHM)
+	if ((sec_caps & OPTEE_SMC_SEC_CAP_DYNAMIC_SHM) && !(sec_caps & OPTEE_SMC_SEC_CAP_HAVE_RESERVED_SHM))
 		pool = optee_config_dyn_shm();
 
 	/*
@@ -634,13 +663,15 @@ static struct optee *optee_probe(struct device_node *np)
 		goto err;
 
 	mutex_init(&optee->call_queue.mutex);
+    mutex_init(&tee_mutex);
 	INIT_LIST_HEAD(&optee->call_queue.waiters);
 	optee_wait_queue_init(&optee->wait_queue);
 	optee_supp_init(&optee->supp);
 	optee->memremaped_shm = memremaped_shm;
 	optee->pool = pool;
 
-	optee_enable_shm_cache(optee);
+	// this will trigger smc, temp comment to avoid aee dump
+	//optee_enable_shm_cache(optee);
 
 	if (optee->sec_caps & OPTEE_SMC_SEC_CAP_DYNAMIC_SHM)
 		pr_info("dynamic shared memory is enabled\n");
@@ -697,11 +728,49 @@ static const struct of_device_id optee_match[] = {
 
 static struct optee *optee_svc;
 
+struct optee *get_optee_drv_state(void)
+{
+	return optee_svc;
+}
+
+int mitee_call_notifier_register(struct notifier_block *n)
+{
+	struct optee *optee = get_optee_drv_state();
+
+	if (!optee) {
+		pr_err("mitee_driver_state is NULL\n");
+		return -EFAULT;
+	}
+
+	return atomic_notifier_chain_register(&optee->notifier, n);
+}
+
+int mitee_call_notifier_unregister(struct notifier_block *n)
+{
+	struct optee *optee = get_optee_drv_state();
+
+	if (!optee) {
+		pr_err("mitee_driver_state is NULL\n");
+		return -EFAULT;
+	}
+
+	return atomic_notifier_chain_unregister(&optee->notifier, n);
+}
+
 static int __init optee_driver_init(void)
 {
+	struct optee *optee = NULL;
+	int ret_code;
+
+	ret_code = tee_init();
+	if (ret_code) {
+		pr_err("tee core module init failed\n");
+		return ret_code;
+	}
+
+#if MITEE_FEATURE_FW_NP_ENABLE
 	struct device_node *fw_np = NULL;
 	struct device_node *np = NULL;
-	struct optee *optee = NULL;
 	int rc = 0;
 
 	/* Node is supposed to be below /firmware */
@@ -715,21 +784,37 @@ static int __init optee_driver_init(void)
 		return -ENODEV;
 	}
 
-	optee = optee_probe(np);
 	of_node_put(np);
-
-	if (IS_ERR(optee))
-		return PTR_ERR(optee);
 
 	rc = optee_enumerate_devices();
 	if (rc) {
-		optee_remove(optee);
 		return rc;
 	}
+#endif
+	optee = optee_probe();
+	if (IS_ERR(optee))
+		return PTR_ERR(optee);
 
 	pr_info("initialized driver\n");
 
 	optee_svc = optee;
+
+    /* mitee log device function START */
+	ATOMIC_INIT_NOTIFIER_HEAD(&optee->notifier);
+	optee->mitee_memlog_pdev = platform_device_alloc("mitee_memlog", 0);
+	if (!optee->mitee_memlog_pdev)
+		return -ENOMEM;
+
+	platform_device_add(optee->mitee_memlog_pdev);
+
+	ret_code = mitee_memlog_probe(optee->mitee_memlog_pdev);
+	if (ret_code) {
+		pr_err("failed to initial mitee_memlog driver (%d)\n", ret_code);
+		platform_device_del(optee->mitee_memlog_pdev);
+		return ret_code;
+	}
+	pr_err("initialized mitee log driver done\n");
+    /* mitee log device function END */
 
     optee_bm_enable();
 
@@ -746,11 +831,13 @@ static void __exit optee_driver_exit(void)
 		optee_remove(optee);
 
     optee_bm_disable();
+
+    tee_exit();
 }
 module_exit(optee_driver_exit);
 
 MODULE_AUTHOR("Linaro");
 MODULE_DESCRIPTION("OP-TEE driver");
-MODULE_SUPPORTED_DEVICE("");
+MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);
 MODULE_VERSION("1.0");
 MODULE_LICENSE("GPL v2");

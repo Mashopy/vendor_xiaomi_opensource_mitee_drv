@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2016, Linaro Limited
+ * Copyright (C) 2021 XiaoMi, Inc.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -16,7 +17,6 @@
 #define _OPTEE_BENCH_H
 
 #include <linux/rwsem.h>
-#include <tee_drv.h>
 
 /*
  * Cycle count divider is enabled (in PMCR),
@@ -57,7 +57,7 @@ struct optee_ts_global {
 extern struct optee_ts_global *optee_bench_ts_global;
 extern struct rw_semaphore optee_bench_ts_rwsem;
 
-#ifdef CONFIG_OPTEE_BENCHMARK
+#if IS_ENABLED(CONFIG_OPTEE_BENCHMARK)
 void optee_bm_enable(void);
 void optee_bm_disable(void);
 void optee_bm_timestamp(void);

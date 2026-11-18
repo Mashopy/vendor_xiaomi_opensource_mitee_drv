@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: (GPL-2.0 OR BSD-2-Clause) */
 /*
  * Copyright (c) 2015-2019, Linaro Limited
+ * Copyright (C) 2021 XiaoMi, Inc.
  */
 #ifndef _OPTEE_MSG_H
 #define _OPTEE_MSG_H
@@ -407,6 +408,8 @@ struct optee_msg_arg {
 #define OPTEE_MSG_RPC_SHM_TYPE_APPL	0
 /* Memory only shared with non-secure kernel */
 #define OPTEE_MSG_RPC_SHM_TYPE_KERNEL	1
+/* Memory shared with non-secure kernel, but exported to userspace */
+#define OPTEE_MSG_RPC_SHM_TYPE_GLOBAL	2
 
 /*
  * Free shared memory previously allocated with OPTEE_MSG_RPC_CMD_SHM_ALLOC

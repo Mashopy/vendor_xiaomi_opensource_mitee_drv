@@ -15,6 +15,11 @@
 #include "optee_private.h"
 #include "optee_smc.h"
 #include "optee_bench.h"
+#include <linux/sched.h>
+#include <linux/thread_info.h>
+#include <linux/kernel.h>
+
+extern struct mutex tee_mutex;
 
 struct optee_call_waiter {
 	struct list_head list_node;
@@ -131,13 +136,25 @@ u32 optee_do_call_with_arg(struct tee_context *ctx, phys_addr_t parg)
 	struct optee_rpc_param param = { };
 	struct optee_call_ctx call_ctx = { };
 	u32 ret;
+	struct cpumask save_mask_enter = {};
+	long prev_nice = task_nice(current);
 
 	param.a0 = OPTEE_SMC_CALL_WITH_ARG;
 	reg_pair_from_64(&param.a1, &param.a2, parg);
 	/* Initialize waiter */
 	optee_cq_wait_init(&optee->call_queue, &w);
+	mutex_lock(&tee_mutex);
+
+	memcpy(&save_mask_enter, &(current->cpus_mask), sizeof(struct cpumask));
+
+	if ((current->flags & PF_NO_SETAFFINITY) != PF_NO_SETAFFINITY) {
+		set_cpus_allowed_ptr(current, cpumask_of(7));
+	}
+	set_user_nice(current, -20);
 	while (true) {
 		struct arm_smccc_res res;
+		struct cpumask save_mask;
+		int need_restore_mask = 0;
 
         optee_bm_timestamp();
 
@@ -145,6 +162,11 @@ u32 optee_do_call_with_arg(struct tee_context *ctx, phys_addr_t parg)
 				 param.a4, param.a5, param.a6, param.a7,
 				 &res);
 
+		if (need_restore_mask) {
+			set_cpus_allowed_ptr(current, &save_mask);
+		}
+
+		atomic_notifier_call_chain(&optee->notifier, MITEE_CALL_RETURNED, NULL);
         optee_bm_timestamp();
 
 		if (res.a0 == OPTEE_SMC_RETURN_ETHREAD_LIMIT) {
@@ -153,12 +175,20 @@ u32 optee_do_call_with_arg(struct tee_context *ctx, phys_addr_t parg)
 			 * become available.
 			 */
 			optee_cq_wait_for_completion(&optee->call_queue, &w);
+            need_restore_mask = 0;
 		} else if (OPTEE_SMC_RETURN_IS_RPC(res.a0)) {
 			might_sleep();
 			param.a0 = res.a0;
 			param.a1 = res.a1;
 			param.a2 = res.a2;
 			param.a3 = res.a3;
+			memcpy(&save_mask, &(current->cpus_mask), sizeof(struct cpumask));
+			if (param.a3 >= NR_CPUS) {
+				pr_err("unknown cpu %u\n", param.a3);
+			} else {
+				set_cpus_allowed_ptr(current, get_cpu_mask(param.a3));
+				need_restore_mask = 1;
+			}
 			optee_handle_rpc(ctx, &param, &call_ctx);
 		} else {
 			ret = res.a0;
@@ -172,6 +202,10 @@ u32 optee_do_call_with_arg(struct tee_context *ctx, phys_addr_t parg)
 	 * thread waiters wake up one.
 	 */
 	optee_cq_wait_final(&optee->call_queue, &w);
+
+	set_cpus_allowed_ptr(current, &save_mask_enter);
+	set_user_nice(current, prev_nice);
+	mutex_unlock(&tee_mutex);
 
 	return ret;
 }
@@ -211,6 +245,37 @@ out:
 	return shm;
 }
 
+static int auth_ca_name(void)
+{
+	char *ca_path = NULL;
+	char tpath[512];
+	const char *white_list[] = {
+		"/vendor/bin",
+		"/odm/bin",
+		"/apex/com.google.android.widevine/bin/hw"
+	};
+	int index = 0;
+
+	memset(tpath,0,sizeof(tpath));
+	ca_path = d_path(&(current->active_mm->exe_file->f_path),tpath,512);
+
+	for (; index < ARRAY_SIZE(white_list); index++) {
+		int capath_len = strlen(ca_path);
+		int wpath_len = strlen(white_list[index]);
+		/* check if the path is the same or the sub dir*/
+		if (((capath_len == wpath_len) || (capath_len > wpath_len && ca_path[wpath_len] == '/'))
+		    && !strncmp(ca_path, white_list[index], wpath_len))
+			break;
+	}
+
+	/* match one white list */
+	if(index < ARRAY_SIZE(white_list))
+		return 0;
+
+	pr_err("auth_ca_name error\n");
+	return -1;
+}
+
 int optee_open_session(struct tee_context *ctx,
 		       struct tee_ioctl_open_session_arg *arg,
 		       struct tee_param *param)
@@ -221,6 +286,11 @@ int optee_open_session(struct tee_context *ctx,
 	struct optee_msg_arg *msg_arg;
 	phys_addr_t msg_parg;
 	struct optee_session *sess = NULL;
+
+	if (0 != auth_ca_name()) {
+		printk("auth ca name error");
+		return -EINVAL;
+	}
 
 	/* +2 for the meta parameters added below */
 	shm = get_msg_arg(ctx, arg->num_params + 2, &msg_arg, &msg_parg);
@@ -239,7 +309,7 @@ int optee_open_session(struct tee_context *ctx,
 	msg_arg->params[1].attr = OPTEE_MSG_ATTR_TYPE_VALUE_INPUT |
 				  OPTEE_MSG_ATTR_META;
 	memcpy(&msg_arg->params[0].u.value, arg->uuid, sizeof(arg->uuid));
-	memcpy(&msg_arg->params[1].u.value, arg->uuid, sizeof(arg->clnt_uuid));
+	memcpy(&msg_arg->params[1].u.value, arg->clnt_uuid, sizeof(arg->clnt_uuid));
 	msg_arg->params[1].u.value.c = arg->clnt_login;
 
 	rc = optee_to_msg_param(msg_arg->params + 2, arg->num_params, param);
@@ -544,15 +614,17 @@ static bool is_normal_memory(pgprot_t p)
 #endif
 }
 
-static int __check_mem_type(struct vm_area_struct *vma, unsigned long end)
+static int __check_mem_type(struct mm_struct *mm, unsigned long start, unsigned long end)
 {
-	while (vma && is_normal_memory(vma->vm_page_prot)) {
-		if (vma->vm_end >= end)
-			return 0;
-		vma = vma->vm_next;
+	struct vm_area_struct *vma;
+	VMA_ITERATOR(vmi, mm, start);
+
+	for_each_vma_range(vmi, vma, end) {
+		if (!is_normal_memory(vma->vm_page_prot))
+			return -EINVAL;
 	}
 
-	return -EINVAL;
+	return 0;
 }
 
 static int check_mem_type(unsigned long start, size_t num_pages)
@@ -564,13 +636,12 @@ static int check_mem_type(unsigned long start, size_t num_pages)
 	 * Allow kernel address to register with OP-TEE as kernel
 	 * pages are configured as normal memory only.
 	 */
-	if (virt_addr_valid(start))
+	if (virt_addr_valid((const void *)start))
 		return 0;
 
-	down_read(&mm->mmap_sem);
-	rc = __check_mem_type(find_vma(mm, start),
-			      start + num_pages * PAGE_SIZE);
-	up_read(&mm->mmap_sem);
+	down_read(&mm->mmap_lock);
+	rc = __check_mem_type(mm, start, start + num_pages * PAGE_SIZE);
+	up_read(&mm->mmap_lock);
 
 	return rc;
 }
