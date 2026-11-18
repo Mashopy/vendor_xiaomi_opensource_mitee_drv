@@ -18,11 +18,13 @@ ddk_headers(
     name = "optee_local_hdrs",
     # include header files
     hdrs = glob([
+        "include/tee/*.h",
         "include/*.h",
     ]),
     # include directory for relative path
     includes = [
         "include",
+        "include/tee",
     ],
     visibility = [
         "//visibility:private",
@@ -33,7 +35,9 @@ define_mgk_ddk_ko(
     name = "optee",
     srcs = glob([
 		"**/src/*.c",
+		"**/src/tee/*.c",
 		"**/include/*.h",
+		"**/include/tee/*.h",
 	]),
     header_deps = [
         ":optee_local_hdrs",

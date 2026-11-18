@@ -5,4 +5,7 @@ optee-y := src/call.o \
 	src/device.o \
 	src/rpc.o \
 	src/shm_pool.o \
-	src/supp.o
+	src/supp.o \
+	src/tee/tee_core.o \
+	src/tee/tee_shm_pool.o \
+	src/tee/tee_shm.o
